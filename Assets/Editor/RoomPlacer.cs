@@ -24,10 +24,14 @@ public class RoomPlacer : EditorWindow
     // private Vector3 previewScale;
     
     private GameObject previewPrefab;
-    private static Vector3 previewPosition;
+    private Vector3 previewPosition;
+
+    private GameObject container;
     
     private List<GameObject> previewDoors = new List<GameObject>();
     private List<GameObject> worldDoors = new List<GameObject>();
+
+    private bool isSnapped = false;
 
     private Vector2 scrollPos;
     
@@ -41,8 +45,6 @@ public class RoomPlacer : EditorWindow
     {
         SceneView.duringSceneGui += OnPreviewPrefab;
         SceneView.duringSceneGui += OnSceneGUI;
-
-        worldDoors = UpdateWorldDoors();
     }
 
     private void OnDisable()
@@ -176,32 +178,48 @@ public class RoomPlacer : EditorWindow
             if (previewPrefab != null)
             {
                 previewPrefab.transform.position = previewPosition;
+                Physics.SyncTransforms();
                 TryToSnapDoors();
             }
-            
-            // Matrix4x4 matrix = Matrix4x4.TRS(previewPosition, Quaternion.identity, previewScale);
-            //
-            // for (int i = 0; i < previewMaterials.Length; i++)
-            // {
-            //     Graphics.DrawMesh(previewMesh, matrix, previewMaterials[i], 0, sceneView.camera, i);
-            // }
         }
+
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            if (previewPrefab == null || !isSnapped)
+                return;
+
+            PlaceRoom(previewPrefab.transform.position, previewPrefab.transform.rotation);
+        
+            e.Use();
+        }
+        
+        sceneView.Repaint();
     }
 
     private void TryToSnapDoors()
     {
         if (previewDoors.Count <= 0)
             return;
+
+        List<GameObject> hitWorldDoors = new List<GameObject>();
         
-        // int doorMask = LayerMask.NameToLayer("Door");
-        //
-        // Collider[] results = new Collider[20];
-        //
-        // PhysicsScene physicsScene = SceneManager.GetActiveScene().GetPhysicsScene();
-        // int hits = physicsScene.OverlapSphere(previewPosition, range, results, doorMask, QueryTriggerInteraction.UseGlobal);
-        //
-        // if (hits <= 0)
-        //     return;
+        LayerMask doorMask = LayerMask.GetMask("Door");
+
+        Collider[] hitDoors = Physics.OverlapSphere(previewPosition, range, doorMask);
+
+        foreach (Collider hitDoor in hitDoors)
+        {
+            if (!hitDoor.transform.IsChildOf(previewPrefab.transform))
+            {
+                hitWorldDoors.Add(hitDoor.gameObject);
+            }
+        }
+
+        if (hitWorldDoors.Count <= 0)
+        {
+            isSnapped = false;
+            return;
+        }
         
         GameObject bestPreviewDoor = null;
         GameObject bestWorldDoor = null;
@@ -209,37 +227,20 @@ public class RoomPlacer : EditorWindow
         
         foreach (GameObject previewDoor in previewDoors)
         {
-            // foreach (Collider hit in results)
-            // {
-            //     if (hit.transform.IsChildOf(previewPrefab.transform))
-            //         continue;
-            //     
-            //     float facingDot = Vector3.Dot(previewDoor.transform.forward, -hit.transform.forward);
-            //
-            //     if (facingDot > 0.5)
-            //     {
-            //         float distance = Vector3.Distance(previewDoor.transform.position, hit.transform.position);
-            //         if (distance < bestDistance)
-            //         {
-            //             bestDistance = distance;
-            //             bestPreviewDoor = previewDoor;
-            //             bestWorldDoor = hit.gameObject;
-            //         }
-            //     }
-            // }
-
-            foreach (GameObject worldDoor in worldDoors)
+            foreach (GameObject worldDoor in hitWorldDoors)
             {
-                float distanceToWorldDoor = Vector3.Distance(previewPosition, worldDoor.transform.position);
-                if (distanceToWorldDoor > range)
+                if (Physics.OverlapSphere(worldDoor.transform.position, 0.001f).Length >= 2)
                     continue;
                 
                 float facingDot = Vector3.Dot(previewDoor.transform.forward, -worldDoor.transform.forward);
+
+                Vector3 directionToWorldDoor = (previewPosition - worldDoor.transform.position).normalized;
+                float directionalDot = Vector3.Dot(worldDoor.transform.forward, directionToWorldDoor);
                 
-                if (facingDot > 0.5)
+                if (facingDot > 0.5f && directionalDot > 0f)
                 {
-                    float distance = Vector3.Distance(previewDoor.transform.position, worldDoor.transform.position);
-                    Debug.LogWarning(worldDoor.name + " distance: " + distance);
+                    float distance = Vector3.Distance(previewPosition, worldDoor.transform.position);
+                    
                     if (distance < bestDistance)
                     {
                         bestDistance = distance;
@@ -248,10 +249,15 @@ public class RoomPlacer : EditorWindow
                     }
                 }
             }
-
-            if (bestPreviewDoor != null)
-                SnapDoors(bestPreviewDoor, bestWorldDoor);
         }
+        
+        if (bestPreviewDoor != null)
+        {
+            isSnapped = true;
+            SnapDoors(bestPreviewDoor, bestWorldDoor);
+        }
+        else
+            isSnapped = false;
     }
 
     private void SnapDoors(GameObject previewDoor, GameObject worldDoor)
@@ -262,15 +268,25 @@ public class RoomPlacer : EditorWindow
         previewPrefab.transform.position = targetPos;
     }
 
-    private List<GameObject> FindGameObjectsWithTagInChildren(GameObject parent, string tag)
+    private void PlaceRoom(Vector3 position, Quaternion rotation)
     {
-        List<GameObject> childrenWithLayer = new List<GameObject>();
-        foreach (Transform child in parent.transform)
-        {
-            if (child.gameObject.CompareTag(tag))
-                childrenWithLayer.Add(child.gameObject);
-        }
-        return childrenWithLayer;
+        ContainerCheck();
+
+        GameObject room = (GameObject)PrefabUtility.InstantiatePrefab(selectedPrefab, container.transform);
+
+        Undo.RegisterCreatedObjectUndo(room, "Place Room");
+        
+        room.transform.position = position;
+        room.transform.rotation = rotation;
+    }
+    
+    private void ContainerCheck()
+    {
+        if (container == null)
+            container = GameObject.Find("Placed Rooms");
+        
+        if (container == null)
+            container = new GameObject("Placed Rooms");
     }
 
     private void OnSceneGUI(SceneView sceneView)
@@ -383,9 +399,10 @@ public class RoomPlacer : EditorWindow
                 }
             }
 
+            GUILayout.Space(5);
         }
         
-        GUILayout.Space(10);
+        //GUILayout.Space(5);
 
         if (GUILayout.Button("Undo", GUILayout.Height(80), GUILayout.Width(160)))
         {
@@ -413,21 +430,52 @@ public class RoomPlacer : EditorWindow
     //         ClearSelection();
     //     }
     // }
-
-    private List<GameObject> UpdateWorldDoors()
+    
+    private List<GameObject> FindGameObjectsWithTagInChildren(GameObject parent, string tag)
     {
-        worldDoors.Clear();
-        
-        List<GameObject> newWorldDoors = new List<GameObject>();
-        
-        GameObject[] allWorldDoors = GameObject.FindGameObjectsWithTag("Door");
-        foreach (GameObject worldDoor in allWorldDoors)
+        List<GameObject> childrenWithLayer = new List<GameObject>();
+        foreach (Transform child in parent.transform)
         {
-            newWorldDoors.Add(worldDoor);
+            if (child.gameObject.CompareTag(tag))
+                childrenWithLayer.Add(child.gameObject);
         }
-        
-        return newWorldDoors;
+        return childrenWithLayer;
     }
+
+    // private List<GameObject> UpdateWorldDoors()
+    // {
+    //     worldDoors.Clear();
+    //     DestroyImmediate(previewPrefab);
+    //     
+    //     List<GameObject> newWorldDoors = new List<GameObject>();
+    //     
+    //     GameObject[] allDoors = GameObject.FindGameObjectsWithTag("Door");
+    //
+    //     LayerMask layerMask = LayerMask.GetMask("Door");
+    //     
+    //     foreach (GameObject door in allDoors)
+    //     {
+    //         if (previewPrefab != null)
+    //             if (door.transform.IsChildOf(previewPrefab.transform))
+    //                 continue;
+    //
+    //         if (Physics.OverlapSphere(door.transform.position, 0.001f, layerMask).Length >= 2)
+    //             continue;
+    //         
+    //         newWorldDoors.Add(door);
+    //
+    //         //Debug.LogWarning(worldDoor);
+    //     }
+    //
+    //     foreach (GameObject door in newWorldDoors)
+    //     {
+    //         Debug.LogWarning(door);
+    //     }
+    //
+    //     Debug.LogWarning(newWorldDoors.Count);
+    //     
+    //     return newWorldDoors;
+    // }
     
     private void ClearPreview()
     {
