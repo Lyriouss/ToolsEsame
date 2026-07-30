@@ -95,6 +95,8 @@ public class RoomPlacer : EditorWindow
         if (GUILayout.Button("One Door", GUILayout.Height(50)))
         {
             doors = RoomDoors.One;
+            //When selecting a new room category, sets selectedPrefab to null so the first prefab of that category is automatically selected
+            selectedPrefab = null;
         }
 
         GUILayout.Space(10);
@@ -102,6 +104,7 @@ public class RoomPlacer : EditorWindow
         if (GUILayout.Button("Two Doors", GUILayout.Height(50)))
         {
             doors = RoomDoors.Two;
+            selectedPrefab = null;
         }
         
         GUILayout.Space(10);
@@ -109,6 +112,7 @@ public class RoomPlacer : EditorWindow
         if (GUILayout.Button("Three Doors", GUILayout.Height(50)))
         {
             doors = RoomDoors.Three;
+            selectedPrefab = null;
         }
         
         GUILayout.Space(10);
@@ -116,6 +120,7 @@ public class RoomPlacer : EditorWindow
         if (GUILayout.Button("Four Doors", GUILayout.Height(50)))
         {
             doors = RoomDoors.Four;
+            selectedPrefab = null;
         }
     }
     
@@ -203,6 +208,10 @@ public class RoomPlacer : EditorWindow
             GameObject filePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(relPath);
             //Gets the 2D texture (image) of prefab to preview in GUI
             Texture2D texturePreview = AssetPreview.GetAssetPreview(filePrefab);
+
+            //If no selectedPrefab is present (usually when opening tool window), sets the first prefab found as selected
+            if (selectedPrefab == null)
+                selectedPrefab = filePrefab;
             
             //If the 2D texture is present
             if (texturePreview != null)
@@ -240,6 +249,7 @@ public class RoomPlacer : EditorWindow
 
     private void PreviewPrefab()
     {
+        #region Prefab Spawn
         //If there is no previewPrefab present and user has selected a prefab
         if (previewPrefab == null && selectedPrefab != null)
         {
@@ -254,8 +264,8 @@ public class RoomPlacer : EditorWindow
             //Saves this selectedPrefab as a reference in case user changes selectedPrefab
             lastSelectedPrefab = selectedPrefab;
         }
-        //If the selectedPrefab saved and current selectedPrefab are different from each other
-        else if (lastSelectedPrefab != selectedPrefab)
+        //If the selectedPrefab saved and current selectedPrefab are different from each other when preview prefab is in scene
+        else if (previewPrefab != null && lastSelectedPrefab != selectedPrefab)
         {
             //Destroys the previewPrefab in scene
             DestroyImmediate(previewPrefab);
@@ -270,36 +280,11 @@ public class RoomPlacer : EditorWindow
             //Saves this selectedPrefab as a reference
             lastSelectedPrefab = selectedPrefab;
         }
+        #endregion
         
+        #region Prefab Movement
         //Creates reference of the current event being processed in editor
         Event e = Event.current;
-        
-        //Runs the contents inside when shift and E key are pressed together
-        if (e.type == EventType.KeyDown && e.shift && e.keyCode == KeyCode.E)
-        {
-            //Skips if the previewPrefab is not present
-            if (previewPrefab == null)
-                return;
-            
-            //Rotates the previewed room 90 degrees clockwise
-            previewPrefab.transform.Rotate(0f, 90f, 0f, Space.World);
-
-            //Uses this method so this event action doesn't run multiple times
-            e.Use();
-        }
-        //Runs the contents inside when shift and Q key are pressed together
-        else if (e.type == EventType.KeyDown && e.shift && e.keyCode == KeyCode.Q)
-        {
-            //Skips if the previewPrefab is not present
-            if (previewPrefab == null)
-                return;
-            
-            //Rotates the previewed room 90 degrees counter-clockwise
-            previewPrefab.transform.Rotate(0f, -90f, 0f, Space.World);
-            
-            //Uses this method so this event action doesn't run multiple times
-            e.Use();
-        }
         
         //Creates a Ray at the position of cursor on scene view
         Ray ray = HandleUtility.GUIPointToWorldRay(e.mousePosition);
@@ -333,6 +318,35 @@ public class RoomPlacer : EditorWindow
                 TryToSnapDoors();
             }
         }
+        #endregion
+        
+        #region User Commands
+        //Runs the contents inside when shift and E key are pressed together
+        if (e.type == EventType.KeyDown && e.shift && e.keyCode == KeyCode.E)
+        {
+            //Skips if the previewPrefab is not present
+            if (previewPrefab == null)
+                return;
+            
+            //Rotates the previewed room 90 degrees clockwise
+            previewPrefab.transform.Rotate(0f, 90f, 0f, Space.World);
+
+            //Uses this method so this event action doesn't run multiple times
+            e.Use();
+        }
+        //Runs the contents inside when shift and Q key are pressed together
+        else if (e.type == EventType.KeyDown && e.shift && e.keyCode == KeyCode.Q)
+        {
+            //Skips if the previewPrefab is not present
+            if (previewPrefab == null)
+                return;
+            
+            //Rotates the previewed room 90 degrees counter-clockwise
+            previewPrefab.transform.Rotate(0f, -90f, 0f, Space.World);
+            
+            //Uses this method so this event action doesn't run multiple times
+            e.Use();
+        }
 
         //Runs when the event is a mouse left click
         if (e.type == EventType.MouseDown && e.button == 0)
@@ -347,6 +361,7 @@ public class RoomPlacer : EditorWindow
             //Uses this method so this event action doesn't run multiple times
             e.Use();
         }
+        #endregion
     }
 
     private void TryToSnapDoors()
